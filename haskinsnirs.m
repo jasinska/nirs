@@ -5,9 +5,6 @@ function haskinsnirs(ParticipantID,PolhemusStatus,time)
 %time is 1 or 2 or 3 depending on visit
 %ParticipantID should be noted in single quotes. eg. '401001'
 
-addpath(genpath('*/nirs/matlabscripts//'))
-rmpath(genpath('*/nirs/matlabscripts/NIRS_SPM_v4_r1_tempoffpath/'))
-
 if time~=1
 if exist('/data3/')
 pathname = strcat('/data3/nirs/', ParticipantID, '_T', num2str(time),'/');
@@ -22,6 +19,7 @@ else
 end
 end
 
+disp('Loading Data')
 fname_nirs = dir(strcat(pathname, ParticipantID, '*.TXT'));
 [nirs_data] = data_conversion_batch(strcat(pathname,fname_nirs.name), 'shimadzu');
 beh_data = dir(strcat(pathname, ParticipantID, '_wordDisplay', '*.txt'));
@@ -274,17 +272,100 @@ if sizek==62;
 end
 
 
-load(strcat(pathname, ParticipantID, '_NOD.mat'))
+load(strcat(pathname, ParticipantID, '_NOD.mat'));
 fname_nirs=strcat(pathname, ParticipantID, '_converted.mat');
 hb = 'hbo';
 HPF = 'wavelet';
 LPF = 'hrf';
 method_cor = 0;
-dir_save = strcat(pathname, 'Analysis/');
+dir_save = strcat(pathname, 'Analysis_stepremoved/');
 mkdir(dir_save);
 flag_window = 1;
 hrf_type = 0;
 units = 0;
+[SPM_nirs] = specification_batch(fname_nirs, hb, HPF, LPF, method_cor, dir_save, flag_window, hrf_type, units,  names, onsets, durations); 
+detrendeddata=waveletdetrending_kaja(nirs_data, SPM_nirs);
+save(strcat(pathname, ParticipantID, '_filteredbaseline_new.mat'), 'detrendeddata');
+%%%THIS IS IMPORTANT
+disp('Performing Step Removal')
+CSR_oxy=nirs_data.oxyData;
+CSR_dxy=nirs_data.dxyData;
+CSR_tHb=nirs_data.tHbData;
+for aa=1:nirs_data.nch;
+    CSR_oxy(:,aa)=stepremoval(nirs_data.oxyData(:,aa));
+    CSR_dxy(:,aa)=stepremoval(nirs_data.dxyData(:,aa));
+    CSR_tHb(:,aa)=stepremoval(nirs_data.tHbData(:,aa));
+end
+datatodet=nirs_data;
+datatodet.oxyData=CSR_oxy;
+datatodet.dxyData=CSR_dxy;
+datatodet.tHbData=CSR_tHb;
+disp('Performing Wavelet Detrending on Step Removed Data')
+fnirs_data=waveletdetrending_kaja(datatodet, SPM_nirs);
+nirs_data=fnirs_data;
+save(strcat(pathname, ParticipantID, '_filteredbaseline_stepremoved.mat'), 'nirs_data');
+
+
+plotcond=zeros(1,length(fnirs_data.oxyData));
+for aa=1:length(onsets);
+    for bb=1:length(onsets{1,aa});
+        plotcond(1,onsets{1,aa}(bb,1):onsets{1,aa}(bb,1)+round(durations{1,aa}(bb,1),0))=0.05;
+    end
+    name = strcat(names{1,aa}, '_plot');
+    name = genvarname(name);
+    eval([name ' = plotcond']);
+end
+%making timeseries plots (5 per page)
+figure
+for aaa=1:5:55;
+for aa=1:5;
+subplot(5,1,aa);
+plot(nirs_data.oxyData(:,aa+aaa-1),'r');
+axis([0 length(fnirs_data.oxyData) -0.2 0.2]);
+hold on;
+plot(detrendeddata.oxyData(:,aa+aaa-1),'b');
+plot(fnirs_data.oxyData(:,aa+aaa-1),'g');
+if isequal(length(names),11);
+plot(text_Word_Target_plot,'k');
+plot(text_NonWord_Target_plot,'k');
+end
+plot(speech_Word_Target_plot,'k');
+plot(speech_NonWord_Practiced_Target_plot,'k');
+title(strcat('CH ', num2str(aa+aaa-1)));
+hold off
+end
+set(gcf, 'PaperUnits', 'inches');
+set(gcf, 'PaperPosition', [0 0 20 10])
+saveas(gcf,strcat('ch', num2str(aa+aaa-1), '_', num2str(aa+aaa-1+5),'.png'));
+end
+figure
+for aaa=56:3:58;
+for aa=1:3;
+subplot(5,1,aa);
+plot(nirs_data.oxyData(:,aa+aaa-1),'r');
+axis([0 length(fnirs_data.oxyData) -0.2 0.2]);
+hold on;
+plot(detrendeddata.oxyData(:,aa+aaa-1),'b');
+plot(fnirs_data.oxyData(:,aa+aaa-1),'g');
+if isequal(length(names),11);
+plot(text_Word_Target_plot,'k');
+plot(text_NonWord_Target_plot,'k');
+end
+plot(speech_Word_Target_plot,'k');
+plot(speech_NonWord_Practiced_Target_plot,'k');
+title(strcat('CH ', num2str(aa+aaa-1)));
+hold off;
+end
+set(gcf, 'PaperUnits', 'inches');
+set(gcf, 'PaperPosition', [0 0 20 10]);
+saveas(gcf,strcat('ch', num2str(aa+aaa-1), '_', num2str(aa+aaa-1+3),'.png'));
+end
+close all
+
+fname_nirs=strcat(pathname, ParticipantID, '_filteredbaseline_stepremoved.mat');
+load(fname_nirs);
+
+disp('Starting specification')
 [SPM_nirs] = specification_batch(fname_nirs, hb, HPF, LPF, method_cor, dir_save, flag_window, hrf_type, units,  names, onsets, durations); 
 hb = 'hbr';
 [SPM_nirs] = specification_batch(fname_nirs, hb, HPF, LPF, method_cor, dir_save, flag_window, hrf_type, units,  names, onsets, durations);
@@ -292,144 +373,19 @@ hb = 'hbr';
 [SPM_nirs] = specification_batch(fname_nirs, hb, HPF, LPF, method_cor, dir_save, flag_window, hrf_type, units,  names, onsets, durations);
 close all
 
-
-
-% step 3: model estimation
- disp('Starting estimation')
-fname_SPM = strcat(pathname,'Analysis/SPM_indiv_HbO.mat');
+disp('Starting model estimation')
+fname_SPM = strcat(pathname,'Analysis_stepremoved/SPM_indiv_HbO.mat');
 [SPM_nirs] = estimation_batch(fname_SPM, fname_nirs);
-fname_SPM = strcat(pathname,'Analysis/SPM_indiv_HbR.mat');
+fname_SPM = strcat(pathname,'Analysis_stepremoved/SPM_indiv_HbR.mat');
 [SPM_nirs] = estimation_batch(fname_SPM, fname_nirs);
-fname_SPM = strcat(pathname,'Analysis/SPM_indiv_HbT.mat');
+fname_SPM = strcat(pathname,'Analysis_stepremoved/SPM_indiv_HbT.mat');
 [SPM_nirs] = estimation_batch(fname_SPM, fname_nirs);
 
 
-%saving separate baseline filtering data
-cL={'hrf'};
-cH={'Wavelet-MDL'};
-fnirs_data.cL.type = cL;
-fnirs_data.cH.type = cH;
-nirs_data.baseline = 'initial time';
-cH.SPM=SPM_nirs;
-ch.type = 'Wavelet-MDL';
-SPM=cH.SPM;
-for kk = 1:size(SPM.xX.X,2) -1;
-    str_model{kk} = num2str(kk);
-end
-str_cH = 'Detrending: ';
-str_cL = 'LPF: ';
-RT = 1./nirs_data.fs;
-row = 1:size(nirs_data.oxyData,1);
-    
-HB = {'R', 'O'};
-k = length(row);
-h = spm_hrf(RT);
-h = [h; zeros(size(h))];
-g = abs(fft(h));
-h = real(ifft(g));
-h = fftshift(h)';
-n = length(h);
-d = [1:n] - n/2 -1;
-KL = spdiags(ones(k,1)*h, d, k,k);
-KL = spdiags(1./sum(KL')',0,k,k)*KL;
-str_cL = [str_cL cL];
-X = SPM.xX.X;
-for kk = 1:size(SPM.xX.X,2)-1
-    str_model{kk} = num2str(kk);
-end
-%end of baseline filter seperate file
-
+disp('Starting Contrasts')
 p_value =  0.05;
 HB = {'R', 'O'};
-brains = {'left', 'right'};
-if exist('/Volumes/nirs/ContrastAnalysis.xls')
-[~,contrasts]=xlsread('/Volumes/nirs/ContrastAnalysis.xls');
-if length(onsets)<5
-[~,contrasts]=xlsread('/Volumes/nirs/ContrastAnalysisYOUNG.xls');
-end
-else
-[~,contrasts]=xlsread('/data3/nirs/ContrastAnalysis.xls');
-if length(onsets)<5
-[~,contrasts]=xlsread('/data3/nirs/ContrastAnalysisYOUNG.xls');
-end
-end
-
-for c = 1:length(HB)
-    hb = HB{1,c};
-    filen_SPM = strcat(pathname, 'Analysis/SPM_indiv_Hb', hb, '.mat'); 
-
-    for a = 1:length(brains)
-        spec_hemi = brains{1,a} ;
-        filen_ch = strcat(pathname,  ParticipantID,'_polhemus.mat');
-
-        for b = 1:length(contrasts);
-            con_name = contrasts{b,1}
-            con_vec = contrasts{b,2};
-            con_vec  = str2num(con_vec)';
-
-            image_dir_save = strcat(dir_save, con_name, '/', spec_hemi, '/Hb', hb, '/');
-            mkdir(image_dir_save);
-            STAT = 'T';
-
-            correct_p = 'none';
-            disp_fig = 1;
-            [stat_brain, act_brain, threshold] = activation_map_batch(filen_SPM, filen_ch, con_name, con_vec, STAT, spec_hemi, p_value, correct_p, disp_fig);
-            
-            %[T_map, T_brain, T_brain_over] = activation_map_batchIC(fname_SPM, fname_ch, contrast, brain_view, p_value, flag_correction, flag_figure, Ic);
-            save(strcat(image_dir_save, 'stat_brain.mat'), 'stat_brain');
-            save(strcat(image_dir_save, 'act_brain.mat'), 'act_brain');
-            save(strcat(image_dir_save, 'threshold.mat'), 'threshold');
-            saveas(gcf, strcat(image_dir_save, spec_hemi, '_', con_name, '.png'))
-            close all
-        end
-    end
-end
-
-load(strcat(pathname,'Analysis/SPM_indiv_HbT.mat'));
-beta_values=[ones((length(onsets)+1),1)*str2num(ParticipantID),(1:(length(onsets)+1))',SPM_nirs.nirs.beta];
-file_name=strcat(pathname, ParticipantID,'_tHbbetas.csv');
-csvwrite(file_name, beta_values)
-
-load(strcat(pathname,'Analysis/SPM_indiv_HbO.mat'));
-beta_values=[ones((length(onsets)+1),1)*str2num(ParticipantID),(1:(length(onsets)+1))',SPM_nirs.nirs.beta];
-file_name=strcat(pathname, ParticipantID,'_oxybetas.csv');
-csvwrite(file_name, beta_values)
-
-load(strcat(pathname,'Analysis/SPM_indiv_HbR.mat'));
-beta_values=[ones((length(onsets)+1),1)*str2num(ParticipantID),(1:(length(onsets)+1))',SPM_nirs.nirs.beta];
-file_name=strcat(pathname, ParticipantID,'_dxybetas.csv');
-csvwrite(file_name, beta_values)
-base= {'initial time'}
-index_start = 1;
-index_end = 1;
-str_baseline = base;
-ntime = size(nirs_data.oxyData, 1);
-total_Hb=nirs_data.tHbData;
-fnirs_data.oxyData = nirs_data.oxyData - ones(ntime,1)*mean(nirs_data.oxyData(index_start:index_end,:),1);
-fnirs_data.dxyData = nirs_data.dxyData - ones(ntime,1)*mean(nirs_data.dxyData(index_start:index_end,:),1);
-ftotal_Hb = total_Hb - ones(ntime,1) * mean(total_Hb(index_start:index_end,:),1);
-fnirs_data.oxyData = KL * fnirs_data.oxyData;
-fnirs_data.dxyData = KL * fnirs_data.dxyData;
-ftotal_Hb = KL * ftotal_Hb;
-[biasM_oxy] = detrend_wavelet_MDL(fnirs_data.oxyData, X(:,1:end-1));
-[biasM_dxy] = detrend_wavelet_MDL(fnirs_data.dxyData, X(:,1:end-1).*(-1));
-[biasM_tHb] = detrend_wavelet_MDL(ftotal_Hb, X(:,1:end-1));
-fnirs_data.cH.bias_oxy = biasM_oxy;
-fnirs_data.cH.bias_dxy = biasM_dxy;
-fnirs_data.cH.bias_tHb = biasM_tHb;
-fnirs_data.oxyData = fnirs_data.oxyData - biasM_oxy;
-fnirs_data.dxyData = fnirs_data.dxyData - biasM_dxy;
-fnirs_data.tHbData = ftotal_Hb - biasM_tHb;
-fnirs_data.fs=nirs_data.fs;
-fnirs_data.nch=nirs_data.nch;
-fnirs_data.baseline=nirs_data.baseline;
-nirs_data=fnirs_data;
-save(strcat(pathname, ParticipantID, '_filteredbaseline.mat'), 'nirs_data');
-%END OF PREPARING SEPARATE FILTERED BASELINE FILES
-
-p_value =  0.05;
-HB = {'R', 'O'};
-brains = {'left', 'right'};
+brains = {'left', 'right', 'frontal'};
 
 if exist('/data3/')
     [~,contrasts]=xlsread('/data3/nirs/ContrastAnalysis.xls');
@@ -443,13 +399,9 @@ else
     end
 end
 
-
-
-
-
-for c = 1:length(HB)
+for c = 1:length(HB);
     hb = HB{1,c};
-    filen_SPM = strcat(pathname, 'Analysis/SPM_indiv_Hb', hb, '.mat'); 
+    filen_SPM = strcat(pathname, 'Analysis_stepremoved/SPM_indiv_Hb', hb, '.mat'); 
 
     for a = 1:length(brains)
         spec_hemi = brains{1,a} ;
@@ -472,66 +424,64 @@ for c = 1:length(HB)
             save(strcat(image_dir_save, 'stat_brain.mat'), 'stat_brain');
             save(strcat(image_dir_save, 'act_brain.mat'), 'act_brain');
             save(strcat(image_dir_save, 'threshold.mat'), 'threshold');
-            saveas(gcf, strcat(image_dir_save, spec_hemi, '_', con_name, '.png'))
-            close all
+            saveas(gcf, strcat(image_dir_save, spec_hemi, '_', con_name, '.png'));
+            close all;
         end
     end
 end
+disp('Contrasts successfully done!')
 
-load(strcat(pathname,'Analysis/SPM_indiv_HbT.mat'));
+disp('Extracting out beta model weights and saving separately')
+load(strcat(pathname,'Analysis_stepremoved/SPM_indiv_HbT.mat'));
 beta_values=[ones((length(onsets)+1),1)*str2num(ParticipantID),(1:(length(onsets)+1))',SPM_nirs.nirs.beta];
 file_name=strcat(pathname, ParticipantID,'_tHbbetas.csv');
-csvwrite(file_name, beta_values)
+csvwrite(file_name, beta_values);
 
-load(strcat(pathname,'Analysis/SPM_indiv_HbO.mat'));
+load(strcat(pathname,'Analysis_stepremoved/SPM_indiv_HbO.mat'));
 beta_values=[ones((length(onsets)+1),1)*str2num(ParticipantID),(1:(length(onsets)+1))',SPM_nirs.nirs.beta];
 file_name=strcat(pathname, ParticipantID,'_oxybetas.csv');
-csvwrite(file_name, beta_values)
+csvwrite(file_name, beta_values);
 
-load(strcat(pathname,'Analysis/SPM_indiv_HbR.mat'));
+load(strcat(pathname,'Analysis_stepremoved/SPM_indiv_HbR.mat'));
 beta_values=[ones((length(onsets)+1),1)*str2num(ParticipantID),(1:(length(onsets)+1))',SPM_nirs.nirs.beta];
 file_name=strcat(pathname, ParticipantID,'_dxybetas.csv');
-csvwrite(file_name, beta_values)
+csvwrite(file_name, beta_values);
+disp('betas saved')
 
-
-if exist('/data3/')
-load('/data3/nirs/Intervention_Pilot/positions.mat')
-else
-load('/Volumes/nirs/Intervention_Pilot/positions.mat')
+disp('Plotting event-related responses per channel');
+if exist('/data3/');
+load('/data3/nirs/Intervention_Pilot/positions.mat');
+else;
+load('/Volumes/nirs/Intervention_Pilot/positions.mat');
 end
-
-for ii=1:length(names)
+for ii=1:length(names);
     cond=ii;
 figure
-for ch = 1:58
-CH=nirs_data.oxyData(:,ch);
+for ch = 1:58;
+CH=fnirs_data.oxyData(:,ch);
 toplot=struct('HbO',onsets{1,cond}/15.8730);
 [HbO, timeT] = cuixuNIRSretrieve(CH, toplot(1,1), 10, 0, 0.0630);
-CH=nirs_data.dxyData(:,ch); 
+CH=fnirs_data.dxyData(:,ch); 
 toplot=struct('HbR',onsets{1,cond}/15.8730); 
 [HbR, timeT] = cuixuNIRSretrieve(CH, toplot(1,1), 10, 0, 0.0630);
 plotting=struct('HbO', HbO.HbO, 'HbR', HbR.HbR);
 subplot(5,13,positions(ch,2))
-plotAveragekj(plotting,timeT,0,[1,0,0;0,0,1]) %changed time in line 508,511,and 514 to TimeT to avoid conflict with PPI in line 531-535
+plotAveragekj(plotting,timeT,0,[1,0,0;0,0,1]); %changed time in line 508,511,and 514 to TimeT to avoid conflict with PPI in line 531-535
 title(strcat('CH ', num2str(ch)));
 end
 set(gcf, 'PaperUnits', 'inches');
-set(gcf, 'PaperPosition', [0 0 20 10])
-set(gcf, 'Position', [100 100 1600 600])
-saveas(gcf,strcat(pathname, ParticipantID, '_', names{cond},'.png'));
-% close(gcf)
-% I = imread(strcat(pathname, ParticipantID, '_', names{cond},'.png'));
-% J = imresize(I, [1000 2000]);
-% J = imresize(J, 0.75);
-% imshow(J);
-% delete(strcat(pathname, ParticipantID, '_', names{cond},'.png'));
-% saveas(gcf,strcat(pathname, ParticipantID, '_', names{cond},'.png'));
-close(gcf)
+set(gcf, 'PaperPosition', [0 0 20 10]);
+set(gcf, 'Position', [100 100 1600 600]);
+saveas(gcf,strcat(pathname, 'Analysis_stepremoved/', ParticipantID, '_', names{cond},'.png'));
+close(gcf);
 end
+disp('Waveforms successfully saved');
 
-if length(names)>9
-    haskinsnirsppi(ParticipantID, time)
+if length(onsets)<5
+    type='TPA';
 else
-    haskinsnirsppi_speechonly(ParticipantID,time)
+    type='TFL';
 end
+[ppibeta]= PPI_batch(ID, type)
+
 end
